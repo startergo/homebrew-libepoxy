@@ -1,0 +1,343 @@
+name: Build Bottles
+
+concurrency:
+  group: bottle-build
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Run every Sunday at midnight UTC
+    - cron: "0 0 * * 0"
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag (e.g., 1.5.10)'
+        required: false
+        default: ''
+      release:
+        description: 'Create GitHub release?'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      create_release: ${{ steps.version.outputs.create_release }}
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v4
+
+      - id: version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+
+          # If no version specified, use git describe to determine next version
+          if [ -z "$VERSION" ]; then
+            # Get git describe output (e.g., v1.5.10-2-gf20b3d8)
+            DESCRIBE=$(git describe --tags 2>/dev/null || echo "v1.5.10")
+
+            # Check if we're ahead of a tag (contains dash)
+            if [[ "$DESCRIBE" =~ "-" ]]; then
+              # Extract current version from describe (first part before dash)
+              CURRENT=$(echo "$DESCRIBE" | cut -d- -f1 | sed 's/^v//')
+              COMMITS_AHEAD=$(echo "$DESCRIBE" | cut -d- -f2)
+              echo "Current tag: v$CURRENT, $COMMITS_AHEAD commits ahead"
+              # Increment patch version
+              VERSION=$(echo "$CURRENT" | awk -F. '{print $1"."$2"."$3+1}')
+            else
+              # Exactly on a tag, increment it
+              CURRENT=${DESCRIBE#v}
+              VERSION=$(echo "$CURRENT" | awk -F. '{print $1"."$2"."$3+1}')
+              echo "On tag v$CURRENT, incrementing to v$VERSION"
+            fi
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+          # Create release for scheduled runs and workflow_dispatch with release=true
+          # Push events do NOT create releases (only update source tarball)
+          if [ "${{ github.event.inputs.release }}" = "true" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "create_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "create_release=false" >> $GITHUB_OUTPUT
+          fi
+
+  update-source-tarball:
+    needs: determine-version
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && needs.determine-version.outputs.create_release == 'false'
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v4
+
+      - name: Check if we should run
+        id: check
+        run: |
+          # Skip if HEAD commit is from update-source-tarball job (prevents infinite loop)
+          if git log -1 --pretty=%B | grep -q "source tarball sha256"; then
+            echo "Skipping: HEAD commit is from update-source-tarball job"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Git
+        if: steps.check.outputs.should_run == 'true'
+        uses: Homebrew/actions/git-user-config@master
+        with:
+          username: "startergo"
+
+      - name: Update tag and calculate new sha256
+        if: steps.check.outputs.should_run == 'true'
+        run: |
+          # Extract version from formula URL
+          VERSION=$(grep 'url.*archive/refs/tags/v' Formula/libepoxy.rb 2>/dev/null | sed -E 's/.*v([0-9.]+)\.tar\.gz.*/\1/')
+
+          # Force update the existing tag to point to current HEAD
+          git tag -f "v$VERSION" HEAD
+          git push -f origin "v$VERSION"
+          echo "Updated tag v$VERSION to point to commit $(git rev-parse HEAD)"
+
+          # Wait for GitHub to update the tarball
+          sleep 5
+
+          # Download the updated tarball and calculate its sha256
+          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v${VERSION}.tar.gz"
+          curl -L -o "libepoxy-${VERSION}.tar.gz" "$TARBALL_URL"
+
+          NEW_SHA256=$(sha256sum "libepoxy-${VERSION}.tar.gz" | awk '{print $1}')
+          echo "New sha256: $NEW_SHA256"
+
+          # Update formula with new sha256
+          awk -v new_sha256="$NEW_SHA256" '
+            /^  sha256/ && !in_bottle {
+              print "  sha256 \"" new_sha256 "\""
+              next
+            }
+            /^  bottle do/ { in_bottle=1 }
+            /^  end/ && in_bottle { in_bottle=0 }
+            { print }
+          ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
+          mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+
+          # Commit and push formula
+          git add Formula/libepoxy.rb
+          git commit -m "Update $VERSION source tarball sha256 to $NEW_SHA256"
+          git push origin master
+
+  build-and-publish-bottles:
+    needs: [determine-version, update-source-tarball]
+    runs-on: macos-latest
+    if: always() && needs.determine-version.outputs.create_release == 'true' && (needs.update-source-tarball.result == 'success' || needs.update-source-tarball.result == 'skipped')
+    env:
+      VERSION: ${{ needs.determine-version.outputs.version }}
+    steps:
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Set up Git
+        uses: Homebrew/actions/git-user-config@master
+        with:
+          username: "startergo"
+
+      - name: Checkout tap
+        uses: actions/checkout@v4
+
+      - name: Update formula to new version (uncommitted)
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          COMMIT=$(git rev-parse HEAD)
+
+          # Add version line and update URL to point to current commit
+          awk -v new_version="$VERSION" -v commit="$COMMIT" '
+            BEGIN { inserted = 0 }
+            /^  url "https:\/\/github.com\/anholt\/libepoxy\/archive\/refs\/tags\// {
+              if (!inserted) {
+                print "  version \"" new_version "\""
+                inserted = 1
+              }
+              print "  url \"https://github.com/startergo/homebrew-libepoxy/archive/" commit ".tar.gz\""
+              next
+            }
+            { print }
+          ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
+          mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+
+          # Download commit tarball and calculate its sha256
+          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/${COMMIT}.tar.gz"
+          curl -L -o "commit.tar.gz" "$TARBALL_URL"
+          COMMIT_SHA256=$(shasum -a 256 commit.tar.gz | awk '{print $1}')
+
+          # Update formula with the commit tarball's sha256
+          awk -v new_sha256="$COMMIT_SHA256" '
+            BEGIN { in_bottle=0 }
+            /^  sha256/ && !in_bottle {
+              print "  sha256 \"" new_sha256 "\""
+              next
+            }
+            /^  bottle do/ { in_bottle=1 }
+            /^  end/ && in_bottle { in_bottle=0 }
+            { print }
+          ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
+          mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+
+          # Save COMMIT_SHA256 for later
+          echo "$COMMIT_SHA256" > commit_sha256.txt
+
+      - name: Build bottle
+        run: |
+          set -x
+          TAP_DIR="$(brew --repository)/Library/Taps/startergo/homebrew-libepoxy"
+          mkdir -p "$TAP_DIR/Formula"
+
+          CURRENT_DIR="$(pwd)"
+          if [ -L "$TAP_DIR" ] && [ "$(readlink -f "$TAP_DIR")" = "$(readlink -f "$CURRENT_DIR")" ]; then
+            echo "Tap is symlinked to current directory"
+          else
+            cp Formula/libepoxy.rb "$TAP_DIR/Formula/"
+          fi
+
+          export HOMEBREW_NO_INSTALL_FROM_API=1
+          brew uninstall libepoxy --force 2>/dev/null || true
+
+          # Install dependencies
+          brew install meson ninja pkg-config
+
+          # Build bottle
+          brew install --build-bottle startergo/libepoxy/libepoxy
+          brew link --overwrite libepoxy || true
+
+          # Create bottle
+          brew bottle --json --root-url="https://github.com/startergo/homebrew-libepoxy/releases/download/v${VERSION}" --force-core-tap "$TAP_DIR/Formula/libepoxy.rb"
+
+          # Save formula before merge
+          cp Formula/libepoxy.rb Formula/libepoxy.rb.before-merge
+
+          # Merge JSON into formula
+          brew bottle --merge --write *.json
+
+          # Restore explicit version if needed
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          if ! grep -q "^  version \"$VERSION\"" Formula/libepoxy.rb; then
+            awk -v new_version="$VERSION" '
+              /^  sha256/ && !in_bottle {
+                print "  version \"" new_version "\""
+              }
+              { print }
+            ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
+            mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+          fi
+
+      - name: Rename bottle to single-dash format
+        run: |
+          for json in *.json; do
+            SINGLE_DASH=$(jq -r '[.. | objects | select(.filename) | .filename] | join(",")' "$json" 2>/dev/null | head -1)
+            if [ -n "$SINGLE_DASH" ]; then
+              DOUBLE_DASH=$(ls libepoxy--*.tar.gz 2>/dev/null | head -1)
+              if [ -n "$DOUBLE_DASH" ]; then
+                mv "$DOUBLE_DASH" "$SINGLE_DASH"
+              fi
+            fi
+          done
+
+      - name: Configure git credentials
+        run: |
+          git config --global url.https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/.insteadOf https://github.com/
+
+      - name: Update formula with version and commit sha256 (temporary)
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+
+          if [ -f commit_sha256.txt ]; then
+            SOURCE_SHA256=$(cat commit_sha256.txt)
+          else
+            echo "ERROR: commit_sha256.txt not found!"
+            exit 1
+          fi
+
+          # Update formula with version, url, and commit sha256
+          awk -v version="$VERSION" -v new_sha256="$SOURCE_SHA256" '
+            BEGIN { in_bottle=0; added_version=0; printed_version=0 }
+            /^  version / {
+              if (!printed_version) {
+                print "  version \"" version "\""
+                printed_version=1
+              }
+              added_version=1
+              next
+            }
+            /^  url "https:\/\/github.com\/startergo\/homebrew-libepoxy\/archive\// {
+              if (!added_version) {
+                print "  version \"" version "\""
+                printed_version=1
+                added_version=1
+              }
+              print "  url \"https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v" version ".tar.gz\""
+              next
+            }
+            /^  sha256/ && !in_bottle {
+              print "  sha256 \"" new_sha256 "\""
+              next
+            }
+            /^  bottle do/ { in_bottle=1 }
+            /^  end/ && in_bottle { in_bottle=0 }
+            { print }
+          ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
+          mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+
+          git add Formula/libepoxy.rb
+          git commit -m "Update to v$VERSION with bottles"
+          git push origin master
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+
+          gh release create "v$VERSION" \
+            --title "libepoxy v$VERSION" \
+            --notes "### Bottles
+          $(ls *.tar.gz 2>/dev/null | sed 's/^/- /' || echo '')" \
+            --latest || true
+
+          for tarball in libepoxy-*.tar.gz; do
+            if [ -f "$tarball" ]; then
+              gh release upload "v$VERSION" "$tarball" || true
+            fi
+          done
+
+      - name: Update formula with tag tarball sha256
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v${VERSION}.tar.gz"
+          curl -L -o "tag-tarball.tar.gz" "$TARBALL_URL"
+          TAG_SHA256=$(shasum -a 256 tag-tarball.tar.gz | awk '{print $1}')
+
+          # Update formula with tag tarball sha256
+          awk -v new_sha256="$TAG_SHA256" '
+            BEGIN { in_bottle=0 }
+            /^  sha256/ && !in_bottle {
+              print "  sha256 \"" new_sha256 "\""
+              next
+            }
+            /^  bottle do/ { in_bottle=1 }
+            /^  end/ && in_bottle { in_bottle=0 }
+            { print }
+          ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
+          mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+
+          git add Formula/libepoxy.rb
+          git commit --amend --no-edit
+          git push -f origin master
