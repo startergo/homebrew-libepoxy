@@ -2,7 +2,7 @@
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/startergo/homebrew-libepoxy/bottle.yml?branch=master&label=bottle%20build&logo=github&style=flat-square)](https://github.com/startergo/homebrew-libepoxy/actions/workflows/bottle.yml)
 
-Homebrew tap for [libepoxy](https://github.com/anholt/libepoxy) - OpenGL function pointer management library for macOS builds.
+Homebrew tap for [libepoxy](https://github.com/anholt/libepoxy) - OpenGL function pointer management library for macOS builds with EGL support via [ANGLE](https://chromium.googlesource.com/angle/angle).
 
 ## What is libepoxy?
 
@@ -14,7 +14,7 @@ libepoxy is a library for handling OpenGL function pointer management for OpenGL
 # Tap the repository
 brew tap startergo/libepoxy
 
-# Install libepoxy
+# Install libepoxy (will also install startergo/angle/angle as dependency)
 brew install startergo/libepoxy/libepoxy
 ```
 
@@ -54,11 +54,12 @@ target_link_libraries(myapp ${EPOXY_LIBRARIES})
 
 ## Build Configuration
 
-This build is configured for macOS:
+This build is configured for macOS with ANGLE backend:
+- **EGL support via ANGLE**: Uses [startergo/angle](https://github.com/startergo/homebrew-angle) for OpenGL ES on macOS
 - GLX support enabled (for X11 compatibility)
-- EGL support enabled
 - X11 platform disabled (macOS native)
 - Tests disabled for faster builds
+- Builds against upstream libepoxy HEAD with macOS EGL patches applied
 
 ## License
 
@@ -66,4 +67,9 @@ MIT
 
 ## Upstream
 
-- [libepoxy Project](https://github.com/anholt/libepoxy)
+This tap combines two upstream projects:
+
+- **[libepoxy](https://github.com/anholt/libepoxy)**: OpenGL function pointer management library
+- **[ANGLE](https://chromium.googlesource.com/angle/angle)**: OpenGL ES implementation for macOS (via [startergo/homebrew-angle](https://github.com/startergo/homebrew-angle))
+
+The upstream libepoxy project last released in 2022 (v1.5.10). This tap builds against the latest upstream HEAD with macOS-specific patches to enable EGL support through ANGLE.
