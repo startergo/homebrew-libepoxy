@@ -333,13 +333,22 @@ jobs:
       - name: Update formula with tag tarball sha256
         run: |
           VERSION="${{ needs.determine-version.outputs.version }}"
-          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v${VERSION}.tar.gz"
-          curl -L -o "tag-tarball.tar.gz" "$TARBALL_URL"
-          TAG_SHA256=$(shasum -a 256 tag-tarball.tar.gz | awk '{print $1}')
+          COMMIT=$(git rev-parse HEAD)
+          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/${COMMIT}.tar.gz"
+          curl -L -o "commit-tarball.tar.gz" "$TARBALL_URL"
+          COMMIT_SHA256=$(shasum -a 256 commit-tarball.tar.gz | awk '{print $1}')
 
-          # Update formula with tag tarball sha256
-          awk -v new_sha256="$TAG_SHA256" '
+          # Update formula with commit URL and sha256 (keep commit-specific URL)
+          awk -v version="$VERSION" -v commit="$COMMIT" -v new_sha256="$COMMIT_SHA256" '
             BEGIN { in_bottle=0 }
+            /^  version / {
+              print "  version \"" version "\""
+              next
+            }
+            /^  url / {
+              print "  url \"https://github.com/startergo/homebrew-libepoxy/archive/" commit ".tar.gz\""
+              next
+            }
             /^  sha256/ && !in_bottle {
               print "  sha256 \"" new_sha256 "\""
               next
