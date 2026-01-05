@@ -2,7 +2,7 @@ name: Build Bottles
 
 concurrency:
   group: bottle-build
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   schedule:
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to tag (e.g., 1.5.10)'
+        description: 'Version to tag (e.g., 1.0.0 or 2025.12.27)'
         required: false
         default: ''
       release:
@@ -43,8 +43,8 @@ jobs:
 
           # If no version specified, use git describe to determine next version
           if [ -z "$VERSION" ]; then
-            # Get git describe output (e.g., v1.5.10-2-gf20b3d8)
-            DESCRIBE=$(git describe --tags 2>/dev/null || echo "v1.5.10")
+            # Get git describe output (e.g., v1.0.5-2-gf20b3d8)
+            DESCRIBE=$(git describe --tags 2>/dev/null || echo "v1.0.0")
 
             # Check if we're ahead of a tag (contains dash)
             if [[ "$DESCRIBE" =~ "-" ]]; then
@@ -69,31 +69,40 @@ jobs:
           # Push events do NOT create releases (only update source tarball)
           if [ "${{ github.event.inputs.release }}" = "true" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             echo "create_release=true" >> $GITHUB_OUTPUT
+            echo "DEBUG: create_release=true"
           else
             echo "create_release=false" >> $GITHUB_OUTPUT
+            echo "DEBUG: create_release=false"
           fi
+          # Verify the output was set
+          echo "DEBUG: Final create_release value check"
 
   update-source-tarball:
     needs: determine-version
     runs-on: ubuntu-latest
+    # Only run on push events (when create_release=false)
+    # Also skip when we're building bottles (create_release=true)
+    # Skip if the HEAD commit is from this job (to prevent infinite loop)
     if: github.event_name == 'push' && needs.determine-version.outputs.create_release == 'false'
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Check if we should run
         id: check
         run: |
           # Skip if HEAD commit is from update-source-tarball job (prevents infinite loop)
-          if git log -1 --pretty=%B | grep -q "source tarball sha256"; then
+          if git log -1 --pretty=%B | grep -q "source tarball sha256 to"; then
             echo "Skipping: HEAD commit is from update-source-tarball job"
             echo "should_run=false" >> $GITHUB_OUTPUT
-          # Skip if formula has no version field
-          elif ! grep -q '^  version ' Formula/libepoxy.rb 2>/dev/null; then
-            echo "Skipping: Formula has no version field"
-            echo "should_run=false" >> $GITHUB_OUTPUT
           else
-            echo "should_run=true" >> $GITHUB_OUTPUT
+            # Also skip if HEAD commit is from publish-bottles job (tag will be updated after release)
+            if git log -1 --pretty=%B | grep -q "Update to v.* with bottles"; then
+              echo "Skipping: HEAD commit is from publish-bottles job, tag was just updated"
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            else
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            fi
           fi
 
       - name: Set up Git
@@ -105,29 +114,24 @@ jobs:
       - name: Update tag and calculate new sha256
         if: steps.check.outputs.should_run == 'true'
         run: |
-          # Extract version from formula (try URL first, then version field)
+          # Extract version from formula URL (not the calculated next version)
           VERSION=$(grep 'url.*archive/refs/tags/v' Formula/libepoxy.rb 2>/dev/null | sed -E 's/.*v([0-9.]+)\.tar\.gz.*/\1/')
-          if [ -z "$VERSION" ]; then
-            VERSION=$(grep '^  version ' Formula/libepoxy.rb 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
-          fi
 
           # Force update the existing tag to point to current HEAD
+          # This updates the tarball at refs/tags/v$VERSION to contain latest code
           git tag -f "v$VERSION" HEAD
           git push -f origin "v$VERSION"
           echo "Updated tag v$VERSION to point to commit $(git rev-parse HEAD)"
 
-          # Wait for GitHub to update the tarball (with retry)
-          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v${VERSION}.tar.gz"
-          for i in {1..6}; do
-            sleep 10
-            echo "Attempt $i: Downloading tarball..."
-            if curl -fL -o "libepoxy-${VERSION}.tar.gz" "$TARBALL_URL"; then
-              echo "Download successful"
-              break
-            fi
-            echo "Download failed, retrying..."
-          done
+          # Wait a moment for GitHub to update the tarball
+          sleep 5
 
+          # Download the updated tarball and calculate its sha256
+          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v${VERSION}.tar.gz"
+          echo "Downloading tarball from: $TARBALL_URL"
+          curl -L -o "libepoxy-${VERSION}.tar.gz" "$TARBALL_URL"
+
+          # Calculate sha256
           NEW_SHA256=$(sha256sum "libepoxy-${VERSION}.tar.gz" | awk '{print $1}')
           echo "New sha256: $NEW_SHA256"
 
@@ -143,6 +147,10 @@ jobs:
           ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
           mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
 
+          # Show the updated formula for verification
+          echo "=== Updated formula ==="
+          head -15 Formula/libepoxy.rb
+
           # Commit and push formula
           git add Formula/libepoxy.rb
           git commit -m "Update $VERSION source tarball sha256 to $NEW_SHA256"
@@ -151,6 +159,8 @@ jobs:
   build-and-publish-bottles:
     needs: [determine-version, update-source-tarball]
     runs-on: macos-latest
+    # Only run when create_release=true (workflow_dispatch or schedule)
+    # always() ensures this runs even if update-source-tarball was skipped
     if: always() && needs.determine-version.outputs.create_release == 'true' && (needs.update-source-tarball.result == 'success' || needs.update-source-tarball.result == 'skipped')
     env:
       VERSION: ${{ needs.determine-version.outputs.version }}
@@ -166,15 +176,22 @@ jobs:
       - name: Checkout tap
         uses: actions/checkout@v4
 
+      - name: Show formula state before update
+        run: |
+          echo "=== Formula before ==="
+          head -20 Formula/libepoxy.rb
+
       - name: Update formula to new version (uncommitted)
         run: |
           VERSION="${{ needs.determine-version.outputs.version }}"
           COMMIT=$(git rev-parse HEAD)
+          echo "=== Updating formula: version $VERSION, url to commit $COMMIT ==="
 
           # Add version line and update URL to point to current commit
+          # This ensures version and URL are in sync for correct bottle filename
           awk -v new_version="$VERSION" -v commit="$COMMIT" '
             BEGIN { inserted = 0 }
-            /^  url "https:\/\/github.com\/anholt\/libepoxy\/archive\/refs\/tags\// {
+            /^  url "https:\/\/github.com\/startergo\/homebrew-libepoxy\/archive\/refs\/tags\// {
               if (!inserted) {
                 print "  version \"" new_version "\""
                 inserted = 1
@@ -186,10 +203,17 @@ jobs:
           ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
           mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
 
+          echo "=== Formula updated (version $VERSION, url to commit) ==="
+          head -20 Formula/libepoxy.rb
+
           # Download commit tarball and calculate its sha256
+          # This is needed because the commit tarball has different content than the tag tarball
           TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/${COMMIT}.tar.gz"
+          echo "=== Downloading commit tarball to calculate sha256 ==="
+          echo "URL: $TARBALL_URL"
           curl -L -o "commit.tar.gz" "$TARBALL_URL"
           COMMIT_SHA256=$(shasum -a 256 commit.tar.gz | awk '{print $1}')
+          echo "Commit tarball sha256: $COMMIT_SHA256"
 
           # Update formula with the commit tarball's sha256
           awk -v new_sha256="$COMMIT_SHA256" '
@@ -204,7 +228,10 @@ jobs:
           ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
           mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
 
-          # Save COMMIT_SHA256 for later
+          echo "=== Formula with updated sha256 ==="
+          head -20 Formula/libepoxy.rb
+
+          # Save COMMIT_SHA256 for the Build bottle step
           echo "$COMMIT_SHA256" > commit_sha256.txt
 
       - name: Build bottle
@@ -240,7 +267,6 @@ jobs:
           brew bottle --merge --write *.json
 
           # Restore explicit version if needed
-          VERSION="${{ needs.determine-version.outputs.version }}"
           if ! grep -q "^  version \"$VERSION\"" Formula/libepoxy.rb; then
             awk -v new_version="$VERSION" '
               /^  sha256/ && !in_bottle {
@@ -267,19 +293,14 @@ jobs:
         run: |
           git config --global url.https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/.insteadOf https://github.com/
 
-      - name: Update formula with version and commit sha256 (temporary)
+      - name: Update formula with version and tag URL (temporary)
         run: |
           VERSION="${{ needs.determine-version.outputs.version }}"
 
-          if [ -f commit_sha256.txt ]; then
-            SOURCE_SHA256=$(cat commit_sha256.txt)
-          else
-            echo "ERROR: commit_sha256.txt not found!"
-            exit 1
-          fi
+          echo "=== Updating formula: version $VERSION, tag URL ==="
 
-          # Update formula with version, url, and commit sha256
-          awk -v version="$VERSION" -v new_sha256="$SOURCE_SHA256" '
+          # Update formula with version and tag URL (keep existing sha256 temporarily)
+          awk -v version="$VERSION" '
             BEGIN { in_bottle=0; added_version=0; printed_version=0 }
             /^  version / {
               if (!printed_version) {
@@ -298,15 +319,12 @@ jobs:
               print "  url \"https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v" version ".tar.gz\""
               next
             }
-            /^  sha256/ && !in_bottle {
-              print "  sha256 \"" new_sha256 "\""
-              next
-            }
-            /^  bottle do/ { in_bottle=1 }
-            /^  end/ && in_bottle { in_bottle=0 }
             { print }
           ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
           mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+
+          echo "=== Formula with tag URL (temporary) ==="
+          head -20 Formula/libepoxy.rb
 
           git add Formula/libepoxy.rb
           git commit -m "Update to v$VERSION with bottles"
@@ -333,22 +351,15 @@ jobs:
       - name: Update formula with tag tarball sha256
         run: |
           VERSION="${{ needs.determine-version.outputs.version }}"
-          COMMIT=$(git rev-parse HEAD)
-          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/${COMMIT}.tar.gz"
-          curl -L -o "commit-tarball.tar.gz" "$TARBALL_URL"
-          COMMIT_SHA256=$(shasum -a 256 commit-tarball.tar.gz | awk '{print $1}')
+          TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v${VERSION}.tar.gz"
+          echo "Downloading tag tarball to calculate sha256: $TARBALL_URL"
+          curl -L -o "tag-tarball.tar.gz" "$TARBALL_URL"
+          TAG_SHA256=$(shasum -a 256 tag-tarball.tar.gz | awk '{print $1}')
+          echo "Tag tarball sha256: $TAG_SHA256"
 
-          # Update formula with commit URL and sha256 (keep commit-specific URL)
-          awk -v version="$VERSION" -v commit="$COMMIT" -v new_sha256="$COMMIT_SHA256" '
+          # Update formula with tag tarball sha256
+          awk -v new_sha256="$TAG_SHA256" '
             BEGIN { in_bottle=0 }
-            /^  version / {
-              print "  version \"" version "\""
-              next
-            }
-            /^  url / {
-              print "  url \"https://github.com/startergo/homebrew-libepoxy/archive/" commit ".tar.gz\""
-              next
-            }
             /^  sha256/ && !in_bottle {
               print "  sha256 \"" new_sha256 "\""
               next
@@ -358,6 +369,9 @@ jobs:
             { print }
           ' Formula/libepoxy.rb > Formula/libepoxy.rb.tmp
           mv Formula/libepoxy.rb.tmp Formula/libepoxy.rb
+
+          echo "=== Formula with tag sha256 ==="
+          head -20 Formula/libepoxy.rb
 
           git add Formula/libepoxy.rb
           git commit --amend --no-edit
