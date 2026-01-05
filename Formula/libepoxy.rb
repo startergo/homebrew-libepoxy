@@ -13,7 +13,9 @@ class Libepoxy < Formula
 
   def install
     # Apply macOS EGL/ANGLE support patch
-    system "patch", "-p1", "--batch", "-i", "#{__dir__}/../patches/libepoxy-changes-main.patch"
+    patch_file = "#{__dir__}/../patches/libepoxy-changes-main.patch"
+    ohai "Applying macOS EGL/ANGLE patch..."
+    system "patch", "-p1", "--batch", "--verbose", "-i", patch_file
 
     # Configure with ANGLE include paths
     angle = Formula["startergo/angle/angle"]
