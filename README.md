@@ -56,8 +56,8 @@ target_link_libraries(myapp ${EPOXY_LIBRARIES})
 
 This build is configured for macOS with ANGLE backend:
 - **EGL support via ANGLE**: Uses [startergo/angle](https://github.com/startergo/homebrew-angle) for OpenGL ES on macOS
-- GLX support enabled (for X11 compatibility)
-- X11 platform disabled (macOS native)
+- **OpenGL**: Native macOS OpenGL framework
+- X11/GLX disabled (macOS native, no X11 dependency)
 - Tests disabled for faster builds
 - Builds against upstream libepoxy HEAD with macOS EGL patches applied
 
