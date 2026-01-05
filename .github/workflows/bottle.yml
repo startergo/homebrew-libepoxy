@@ -79,7 +79,7 @@ jobs:
     if: github.event_name == 'push' && needs.determine-version.outputs.create_release == 'false'
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check if we should run
         id: check
@@ -87,6 +87,10 @@ jobs:
           # Skip if HEAD commit is from update-source-tarball job (prevents infinite loop)
           if git log -1 --pretty=%B | grep -q "source tarball sha256"; then
             echo "Skipping: HEAD commit is from update-source-tarball job"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          # Skip if formula has no version field
+          elif ! grep -q '^  version ' Formula/libepoxy.rb 2>/dev/null; then
+            echo "Skipping: Formula has no version field"
             echo "should_run=false" >> $GITHUB_OUTPUT
           else
             echo "should_run=true" >> $GITHUB_OUTPUT
@@ -101,8 +105,11 @@ jobs:
       - name: Update tag and calculate new sha256
         if: steps.check.outputs.should_run == 'true'
         run: |
-          # Extract version from formula URL
+          # Extract version from formula (try URL first, then version field)
           VERSION=$(grep 'url.*archive/refs/tags/v' Formula/libepoxy.rb 2>/dev/null | sed -E 's/.*v([0-9.]+)\.tar\.gz.*/\1/')
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep '^  version ' Formula/libepoxy.rb 2>/dev/null | sed 's/.*"\(.*\)".*/\1/')
+          fi
 
           # Force update the existing tag to point to current HEAD
           git tag -f "v$VERSION" HEAD

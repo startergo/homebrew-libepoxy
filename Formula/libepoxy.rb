@@ -3,6 +3,7 @@ class Libepoxy < Formula
   homepage "https://github.com/anholt/libepoxy"
   license "MIT"
 
+  version "1.5.10"
   head "https://github.com/anholt/libepoxy.git",
        using: :git
 
