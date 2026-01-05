@@ -116,12 +116,17 @@ jobs:
           git push -f origin "v$VERSION"
           echo "Updated tag v$VERSION to point to commit $(git rev-parse HEAD)"
 
-          # Wait for GitHub to update the tarball
-          sleep 5
-
-          # Download the updated tarball and calculate its sha256
+          # Wait for GitHub to update the tarball (with retry)
           TARBALL_URL="https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v${VERSION}.tar.gz"
-          curl -L -o "libepoxy-${VERSION}.tar.gz" "$TARBALL_URL"
+          for i in {1..6}; do
+            sleep 10
+            echo "Attempt $i: Downloading tarball..."
+            if curl -fL -o "libepoxy-${VERSION}.tar.gz" "$TARBALL_URL"; then
+              echo "Download successful"
+              break
+            fi
+            echo "Download failed, retrying..."
+          done
 
           NEW_SHA256=$(sha256sum "libepoxy-${VERSION}.tar.gz" | awk '{print $1}')
           echo "New sha256: $NEW_SHA256"
