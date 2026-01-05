@@ -2,11 +2,6 @@ class Libepoxy < Formula
   desc "Library for handling OpenGL function pointer management"
   homepage "https://github.com/anholt/libepoxy"
 
-  bottle do
-    root_url "https://github.com/startergo/homebrew-libepoxy/releases/download/v1.5.10"
-    sha256 cellar: :any, arm64_sequoia: "PLACEHOLDER"
-  end
-
   depends_on "startergo/angle/angle"
   depends_on "meson" => :build
   depends_on "ninja" => :build
