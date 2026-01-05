@@ -1,19 +1,15 @@
 class Libepoxy < Formula
   desc "Library for handling OpenGL function pointer management"
   homepage "https://github.com/anholt/libepoxy"
+  license "MIT"
+
+  head "https://github.com/anholt/libepoxy.git",
+       using: :git
 
   depends_on "startergo/angle/angle"
   depends_on "meson" => :build
   depends_on "ninja" => :build
   depends_on "pkg-config" => :build
-
-  version "1.5.10"
-  url "https://github.com/anholt/libepoxy/archive/refs/tags/1.5.10.tar.gz"
-  sha256 "1d73472585fb44fe8fddc07150dacb60416e050022f58d5aaf7dfae15c1149aa"
-  license "MIT"
-
-  head "https://github.com/anholt/libepoxy.git",
-       using: :git
 
   def install
     # Apply macOS EGL/ANGLE support patch
