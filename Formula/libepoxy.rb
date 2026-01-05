@@ -15,6 +15,13 @@ class Libepoxy < Formula
   depends_on "pkg-config" => :build
 
   def install
+    # Download upstream libepoxy source (HEAD from anholt/libepoxy)
+    upstream_commit = "1b6d7db184bb1a0d9af0e200e06a0331028eaaae"
+    upstream_url = "https://github.com/anholt/libepoxy/archive/#{upstream_commit}.tar.gz"
+    ohai "Downloading upstream libepoxy from #{upstream_url}"
+    system "curl", "-L", upstream_url, "-o", "libepoxy.tar.gz"
+    system "tar", "-xzf", "libepoxy.tar.gz", "--strip-components=1"
+
     # Apply macOS EGL/ANGLE support patch
     patch_file = "#{__dir__}/../patches/libepoxy-changes-main.patch"
     ohai "Applying macOS EGL/ANGLE patch..."
