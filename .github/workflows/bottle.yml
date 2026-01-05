@@ -32,10 +32,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      libepoxy_commit: ${{ steps.libepoxy_commit.outputs.commit }}
       create_release: ${{ steps.version.outputs.create_release }}
     steps:
       - name: Checkout tap
         uses: actions/checkout@v4
+
+      - id: libepoxy_commit
+        run: |
+          # Get latest libepoxy commit hash from upstream
+          COMMIT=$(git ls-remote https://github.com/anholt/libepoxy.git HEAD | awk '{ print $1 }')
+          SHORT_COMMIT=${COMMIT:0:8}
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "libepoxy commit: $SHORT_COMMIT"
 
       - id: version
         run: |
@@ -164,6 +173,7 @@ jobs:
     if: always() && needs.determine-version.outputs.create_release == 'true' && (needs.update-source-tarball.result == 'success' || needs.update-source-tarball.result == 'skipped')
     env:
       VERSION: ${{ needs.determine-version.outputs.version }}
+      LIBEPOXY_COMMIT: ${{ needs.determine-version.outputs.libepoxy_commit }}
     steps:
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@master
@@ -242,9 +252,20 @@ jobs:
 
           CURRENT_DIR="$(pwd)"
           if [ -L "$TAP_DIR" ] && [ "$(readlink -f "$TAP_DIR")" = "$(readlink -f "$CURRENT_DIR")" ]; then
-            echo "Tap is symlinked to current directory"
+            echo "Tap is symlinked to current directory, skipping copy"
           else
+            # Copy the formula to the tap
+            echo "Copying formula to tap..."
             cp Formula/libepoxy.rb "$TAP_DIR/Formula/"
+
+            # Copy patches directory to tap (needed by formula install block)
+            if [ -d "patches" ]; then
+              echo "Copying patches directory to tap..."
+              cp -r patches "$TAP_DIR/"
+              echo "Copied patches directory to tap"
+              ls -la patches/
+              ls -la "$TAP_DIR/patches/"
+            fi
           fi
 
           export HOMEBREW_NO_INSTALL_FROM_API=1
@@ -338,7 +359,9 @@ jobs:
 
           gh release create "v$VERSION" \
             --title "libepoxy v$VERSION" \
-            --notes "### Bottles
+            --notes "Built from upstream libepoxy commit: $LIBEPOXY_COMMIT
+
+          ### Bottles
           $(ls *.tar.gz 2>/dev/null | sed 's/^/- /' || echo '')" \
             --latest || true
 
