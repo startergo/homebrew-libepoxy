@@ -14,7 +14,7 @@ class Libepoxy < Formula
 
   version "1.5.10"
   url "https://github.com/anholt/libepoxy/archive/refs/tags/1.5.10.tar.gz"
-  sha256 "fc9a3e5dd6bdbcedd91e3244a6396c4e2eb5bbceebbe5ed5283c19743a7dff2a"
+  sha256 "fde6a0a7028a648bc81a6b05d5541e9054f78b0af948ea2cac7b8e14251b990d"
   license "MIT"
 
   head "https://github.com/anholt/libepoxy.git",
