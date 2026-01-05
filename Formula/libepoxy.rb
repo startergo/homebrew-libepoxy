@@ -7,6 +7,7 @@ class Libepoxy < Formula
     sha256 cellar: :any, arm64_sequoia: "PLACEHOLDER"
   end
 
+  depends_on "startergo/angle/angle"
   depends_on "meson" => :build
   depends_on "ninja" => :build
   depends_on "pkg-config" => :build
@@ -20,12 +21,21 @@ class Libepoxy < Formula
        using: :git
 
   def install
+    # Apply macOS EGL/ANGLE support patch
+    system "patch", "-p1", "-i", "#{__dir__}/../patches/libepoxy-changes-main.patch"
+
+    # Configure with ANGLE include paths
+    angle = Formula["startergo/angle/angle"]
+    angle_include = "#{angle.include}"
+    angle_pc_path = "#{angle.lib}/pkgconfig"
+
     system "meson", "setup", "build",
            *std_meson_args,
-           "-Dtests=false",
-           "-Dglx=yes",
+           "-Dc_args=-I#{angle_include}",
+           "--pkg-config-path=#{angle_pc_path}",
            "-Degl=yes",
-           "-Dx11=false"
+           "-Dx11=false",
+           "-Dtests=false"
     system "meson", "compile", "-C", "build", "--verbose"
     system "meson", "install", "-C", "build"
   end

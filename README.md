@@ -1,6 +1,8 @@
 # homebrew-libepoxy
 
-Homebrew tap for [libepoxy](https://github.com/anholt/libepoxy) - OpenGL function pointer management library.
+[![Build Status](https://img.shields.io/github/actions/workflow/status/startergo/homebrew-libepoxy/bottle.yml?branch=master&label=bottle%20build&logo=github&style=flat-square)](https://github.com/startergo/homebrew-libepoxy/actions/workflows/bottle.yml)
+
+Homebrew tap for [libepoxy](https://github.com/anholt/libepoxy) - OpenGL function pointer management library for macOS builds.
 
 ## What is libepoxy?
 

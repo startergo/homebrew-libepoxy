@@ -1,0 +1,57 @@
+diff --git a/meson.build b/meson.build
+index 7d85265..9fa9225 100644
+--- a/meson.build
++++ b/meson.build
+@@ -168,7 +168,12 @@ gl_dep = dependency('gl', required: false)
+ if not gl_dep.found() and not build_glx
+   gl_dep = dependency('opengl', required: false)
+ endif
++
+ egl_dep = dependency('egl', required: false)
++if not egl_dep.found()
++  egl_dep = dependency('Qt5Gui', modules: 'Qt5::Gui_EGL', required: false)
++endif
++
+ elg_headers_dep = egl_dep.partial_dependency(compile_args: true, includes: true)
+ 
+ # Optional dependencies for tests
+@@ -182,6 +187,9 @@ gles2_dep = dependency('glesv2', required: false)
+ if not gles2_dep.found()
+   gles2_dep = cc.find_library('libGLESv2', required: false)
+ endif
++if not gles2_dep.found()
++  egl_dep = dependency('Qt5Gui', modules: 'Qt5::Gui_GLESv2', required: false)
++endif
+ 
+ gles1_dep = dependency('glesv1_cm', required: false)
+ if not gles1_dep.found()
+diff --git a/src/dispatch_common.c b/src/dispatch_common.c
+index 9f3dac4..3ba9b0f 100644
+--- a/src/dispatch_common.c
++++ b/src/dispatch_common.c
+@@ -175,9 +175,10 @@
+ 
+ #if defined(__APPLE__)
+ #define GLX_LIB "/opt/X11/lib/libGL.1.dylib"
++#define EGL_LIB "libEGL.dylib"
+ #define OPENGL_LIB "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL"
+-#define GLES1_LIB "libGLESv1_CM.so"
+-#define GLES2_LIB "libGLESv2.so"
++#define GLES1_LIB "libGLESv1_CM.dylib"
++#define GLES2_LIB "libGLESv2.dylib"
+ #elif defined(__ANDROID__)
+ #define GLX_LIB "libGLESv2.so"
+ #define EGL_LIB "libEGL.so"
+diff --git a/src/dispatch_common.h b/src/dispatch_common.h
+index a136943..55388a8 100644
+--- a/src/dispatch_common.h
++++ b/src/dispatch_common.h
+@@ -28,7 +28,7 @@
+ #define PLATFORM_HAS_GLX ENABLE_GLX
+ #define PLATFORM_HAS_WGL 1
+ #elif defined(__APPLE__)
+-#define PLATFORM_HAS_EGL 0 
++#define PLATFORM_HAS_EGL ENABLE_EGL
+ #define PLATFORM_HAS_GLX ENABLE_GLX
+ #define PLATFORM_HAS_WGL 0
+ #elif defined(ANDROID)
