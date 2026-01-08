@@ -27,9 +27,10 @@ class Libepoxy < Formula
     system "curl", "-L", upstream_url, "-o", "libepoxy.tar.gz"
     system "tar", "-xzf", "libepoxy.tar.gz", "--strip-components=1"
 
-    # Apply macOS EGL/ANGLE support patch
-    patch_file = "#{__dir__}/../patches/libepoxy-changes-main.patch"
-    ohai "Applying macOS EGL/ANGLE patch..."
+    # Apply macOS EGL/ANGLE support patch from akihikodaki
+    # This enables proper EGL 1.5 support including eglGetPlatformDisplay
+    patch_file = "#{__dir__}/../patches/libepoxy-akihikodaki-egl15.patch"
+    ohai "Applying akihikodaki's EGL 1.5 support patch..."
     system "patch", "-p1", "--batch", "--verbose", "-i", patch_file
 
     # Configure with ANGLE include paths
@@ -46,6 +47,12 @@ class Libepoxy < Formula
            "-Dtests=false"
     system "meson", "compile", "-C", "build", "--verbose"
     system "meson", "install", "-C", "build"
+  end
+
+  def post_install
+    # Add rpath to HOMEBREW_PREFIX/lib so dlopen finds ANGLE libraries at runtime
+    # ANGLE uses @rpath/libEGL.dylib, and libepoxy dlopen's it
+    system "install_name_tool", "-add_rpath", "#{HOMEBREW_PREFIX}/lib", "#{lib}/libepoxy.0.dylib"
   end
 
   test do
