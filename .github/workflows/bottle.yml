@@ -183,6 +183,23 @@ jobs:
         with:
           username: "startergo"
 
+
+      - name: Check upstream scheduled workflow completed (scheduled run only)
+        if: github.event_name == 'schedule'
+        run: |
+          echo "Checking that angle scheduled workflow completed successfully..."
+
+          TODAY=$(date -u +%Y-%m-%d)
+
+          # Check if angle's scheduled workflow ran successfully today
+          ANGLE_RUN=$(gh run list --repo startergo/homebrew-angle --workflow=Build Bottles --event=schedule --limit 5 --json databaseId,conclusion,createdAt --jq ".[] | select(.conclusion == \"success\") | select(.createdAt | startswith(\"$TODAY\")) | .databaseId" | head -1)
+
+          if [ -z "$ANGLE_RUN" ]; then
+            echo "ERROR: angle scheduled workflow did not complete successfully today. Aborting."
+            exit 1
+          fi
+          echo "✓ angle scheduled workflow completed today (run #$ANGLE_RUN)"
+
       - name: Checkout tap
         uses: actions/checkout@v4
 
