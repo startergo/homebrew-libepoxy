@@ -4,14 +4,15 @@ class Libepoxy < Formula
   license "MIT"
 
   version "1.0.3"
-  url "https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v1.0.3.tar.gz"
-  sha256 "6d0e9a6dbdf180af080485985d6eff5db72117daa27d424805cce1d8fc92eae3"
+  version "1.0.4"
+  url "https://github.com/startergo/homebrew-libepoxy/archive/4a452bf203b0b4dca41d744a0542917820b2ff50.tar.gz"
+  sha256 "c76d8657e98a1204e293b0303ac87a734ce747e4a32412c450ef23cfb06e3ac4"
   head "https://github.com/anholt/libepoxy.git",
        using: :git
 
   bottle do
-    root_url "https://github.com/startergo/homebrew-libepoxy/releases/download/v1.0.3"
-    sha256 cellar: :any, arm64_sequoia: "44261e98ec992274d7c3a4cb0cfcabb0e70ff2e3e96899456be29617edf4c3cc"
+    root_url "https://github.com/startergo/homebrew-libepoxy/releases/download/v1.0.4"
+    sha256 cellar: :any, arm64_sequoia: "8787cc8c34921834665262dff4941216dd6717edddf2c6d5cdfe04f03b24c517"
   end
 
   depends_on "startergo/angle/angle"
