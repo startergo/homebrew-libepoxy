@@ -3,10 +3,9 @@ class Libepoxy < Formula
   homepage "https://github.com/anholt/libepoxy"
   license "MIT"
 
-  version "1.0.4"
   version "1.0.5"
-  url "https://github.com/startergo/homebrew-libepoxy/archive/4e946212a1db4b237af72a23c2acbf54f3c5aae1.tar.gz"
-  sha256 "e6c1f1d0cc5eb4ad64c78a0af4991775052faffb783cb7bc321e88cd9ce468bf"
+  url "https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v1.0.5.tar.gz"
+  sha256 "24a1d98c0c4900f385bbfe8fc70d725ba8c994c5fac1544aa4e464a083481d59"
   head "https://github.com/anholt/libepoxy.git",
        using: :git
 
