@@ -289,6 +289,7 @@ jobs:
           brew uninstall libepoxy --force 2>/dev/null || true
 
           # Install dependencies
+          brew tap startergo/gn
           brew tap startergo/angle
           brew install meson ninja pkg-config
 
