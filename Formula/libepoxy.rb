@@ -5,7 +5,7 @@ class Libepoxy < Formula
 
   version "1.0.5"
   url "https://github.com/startergo/homebrew-libepoxy/archive/refs/tags/v1.0.5.tar.gz"
-  sha256 "24a1d98c0c4900f385bbfe8fc70d725ba8c994c5fac1544aa4e464a083481d59"
+  sha256 "a724d97723ef4d791bcb75d7992173c1ea6f63b7389b4cfb225f08d424a8d4ef"
   head "https://github.com/anholt/libepoxy.git",
        using: :git
 
