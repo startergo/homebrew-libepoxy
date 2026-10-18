@@ -36,7 +36,7 @@ jobs:
       create_release: ${{ steps.version.outputs.create_release }}
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - id: libepoxy_commit
         run: |
@@ -95,7 +95,7 @@ jobs:
     if: github.event_name == 'push' && needs.determine-version.outputs.create_release == 'false'
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check if we should run
         id: check
@@ -116,7 +116,7 @@ jobs:
 
       - name: Set up Git
         if: steps.check.outputs.should_run == 'true'
-        uses: Homebrew/actions/git-user-config@master
+        uses: Homebrew/actions/git-user-config@main
         with:
           username: "startergo"
 
@@ -176,10 +176,10 @@ jobs:
       LIBEPOXY_COMMIT: ${{ needs.determine-version.outputs.libepoxy_commit }}
     steps:
       - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@master
+        uses: Homebrew/actions/setup-homebrew@main
 
       - name: Set up Git
-        uses: Homebrew/actions/git-user-config@master
+        uses: Homebrew/actions/git-user-config@main
         with:
           username: "startergo"
 
@@ -201,7 +201,7 @@ jobs:
           echo "✓ angle scheduled workflow completed today (run #$ANGLE_RUN)"
 
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Show formula state before update
         run: |
