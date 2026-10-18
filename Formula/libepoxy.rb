@@ -49,10 +49,23 @@ class Libepoxy < Formula
     system "meson", "install", "-C", "build"
   end
 
-  def post_install
+  post_install_steps do
     # Add rpath to HOMEBREW_PREFIX/lib so dlopen finds ANGLE libraries at runtime
-    # ANGLE uses @rpath/libEGL.dylib, and libepoxy dlopen's it
-    system "install_name_tool", "-add_rpath", "#{HOMEBREW_PREFIX}/lib", "#{lib}/libepoxy.0.dylib"
+    # ANGLE uses @rpath/libEGL.dylib, and libepoxy dlopens it.
+    # delete-then-add keeps the step idempotent; install_name_tool invalidates
+    # the ad-hoc signature, so re-sign afterwards.
+    on_macos do
+      run "install_name_tool",
+          args: ["-delete_rpath", "{{HOMEBREW_PREFIX}}/lib", "{{prefix}}/lib/libepoxy.0.dylib"],
+          writable_paths: ["lib/libepoxy.0.dylib"],
+          must_succeed: false
+      run "install_name_tool",
+          args: ["-add_rpath", "{{HOMEBREW_PREFIX}}/lib", "{{prefix}}/lib/libepoxy.0.dylib"],
+          writable_paths: ["lib/libepoxy.0.dylib"]
+      run "codesign",
+          args: ["--force", "--sign", "-", "{{prefix}}/lib/libepoxy.0.dylib"],
+          writable_paths: ["lib/libepoxy.0.dylib"]
+    end
   end
 
   test do
