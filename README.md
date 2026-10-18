@@ -11,8 +11,15 @@ libepoxy is a library for handling OpenGL function pointer management for OpenGL
 ## Installation
 
 ```bash
-# Tap the repository
+# Homebrew 6+ requires trusting non-official taps before use. Trust BEFORE
+# tapping (brew tap validates formulae at tap time). Include the taps that
+# libepoxy depends on: angle, and gn (needed when ANGLE builds from source).
+brew trust startergo/libepoxy startergo/angle startergo/gn
+
+# Tap the repositories
 brew tap startergo/libepoxy
+brew tap startergo/angle
+brew tap startergo/gn
 
 # Install libepoxy (will also install startergo/angle/angle as dependency)
 brew install startergo/libepoxy/libepoxy
